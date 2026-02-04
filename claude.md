@@ -36,7 +36,8 @@ A search demo built to showcase advanced Elasticsearch capabilities for Nextory 
 ### Bonsai (OpenSearch)
 - **Cluster:** foxstarius_search_family
 - **Region:** AWS US East (Virginia)
-- **Credentials:** Stored in Render environment variables
+- **URL:** `https://8e190d5b70:a612380fa3de9060826b@foxstarius-search-fa-1m60zt63.us-east-1.bonsaisearch.net`
+- **Credentials:** Also stored in Render environment variables
 
 ### Render
 - **Service:** nextory-search

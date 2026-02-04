@@ -222,14 +222,22 @@ app.get('/api/suggest', async (req, res) => {
       return terms.filter((term) => valueLower.includes(term));
     };
 
-    // Process results
-    const authors = (authorsResult.aggregations?.authors?.buckets || []).map((b) => ({
+    // Helper to unwrap OpenSearch response (wraps in body) vs Elasticsearch (doesn't)
+    const unwrap = (result) => result.body || result;
+
+    // Process results (unwrap for OpenSearch compatibility)
+    const authorsData = unwrap(authorsResult);
+    const titlesData = unwrap(titlesResult);
+    const genresData = unwrap(genresResult);
+    const yearsData = unwrap(yearsResult);
+
+    const authors = (authorsData.aggregations?.authors?.buckets || []).map((b) => ({
       value: b.key,
       count: b.doc_count,
       matchedTerms: findMatchedTerms(b.key, queryTerms),
     }));
 
-    const titles = (titlesResult.hits?.hits || []).map((hit) => ({
+    const titles = (titlesData.hits?.hits || []).map((hit) => ({
       id: hit._id,
       value: hit._source.title,
       author: hit._source.author,
@@ -238,14 +246,14 @@ app.get('/api/suggest', async (req, res) => {
       matchedTerms: findMatchedTerms(hit._source.title, queryTerms),
     }));
 
-    const genresList = (genresResult.aggregations?.genres?.buckets || []).map((b) => ({
+    const genresList = (genresData.aggregations?.genres?.buckets || []).map((b) => ({
       value: b.key,
       count: b.doc_count,
       matchedTerms: findMatchedTerms(b.key, queryTerms),
     }));
 
     // Filter years by the pattern
-    let yearsList = (yearsResult.aggregations?.years?.buckets || []).map((b) => ({
+    let yearsList = (yearsData.aggregations?.years?.buckets || []).map((b) => ({
       value: b.key,
       count: b.doc_count,
     }));
@@ -336,7 +344,7 @@ app.get('/api/search', async (req, res) => {
       sortOptions.push('_score');
     }
 
-    const result = await esClient.search({
+    const rawResult = await esClient.search({
       index: INDEX_NAME,
       body: {
         from,
@@ -355,6 +363,9 @@ app.get('/api/search', async (req, res) => {
         },
       },
     });
+
+    // Unwrap for OpenSearch compatibility (wraps response in body)
+    const result = rawResult.body || rawResult;
 
     const hits = result.hits.hits.map((hit) => ({
       id: hit._id,

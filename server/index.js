@@ -165,6 +165,7 @@ app.get('/api/suggest', async (req, res) => {
                     should: queryTerms.map((term) => ({
                       prefix: { genre: { value: term, case_insensitive: true } },
                     })),
+                    minimum_should_match: 1,
                   },
                 },
               ],
@@ -246,11 +247,14 @@ app.get('/api/suggest', async (req, res) => {
       matchedTerms: findMatchedTerms(hit._source.title, queryTerms),
     }));
 
-    const genresList = (genresResult.aggregations?.genres?.buckets || []).map((b) => ({
-      value: b.key,
-      count: b.doc_count,
-      matchedTerms: findMatchedTerms(b.key, queryTerms),
-    }));
+    // Filter genres to only those starting with a query term
+    const genresList = (genresResult.aggregations?.genres?.buckets || [])
+      .filter((b) => queryTerms.some((term) => b.key.toLowerCase().startsWith(term)))
+      .map((b) => ({
+        value: b.key,
+        count: b.doc_count,
+        matchedTerms: findMatchedTerms(b.key, queryTerms),
+      }));
 
     // Filter years by the pattern
     let yearsList = (yearsResult.aggregations?.years?.buckets || []).map((b) => ({

@@ -276,8 +276,8 @@ app.get('/api/suggest', async (req, res) => {
       activeFilters,
     });
   } catch (error) {
-    console.error('Suggest error:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Suggest error:', error.message, error.meta?.body || error);
+    res.status(500).json({ error: error.message, details: error.meta?.body?.error || null });
   }
 });
 

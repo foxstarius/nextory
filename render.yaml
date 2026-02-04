@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: nextory-search
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: ELASTICSEARCH_URL
+        sync: false  # You'll set this manually from Bonsai
+      - key: NODE_ENV
+        value: production

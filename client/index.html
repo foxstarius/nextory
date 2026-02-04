@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nextory Search Concept</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <a href="/" class="logo">Nextory</a>
+      <div class="search-bar-container">
+        <div class="search-bar">
+          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.35-4.35"></path>
+          </svg>
+          <input
+            type="text"
+            id="searchInput"
+            class="search-input-inline"
+            placeholder="Search books, authors, genres..."
+            autocomplete="off"
+          >
+          <button class="clear-search" id="clearSearch" style="display: none;">&times;</button>
+        </div>
+        <!-- Active filters (chips) below search bar -->
+        <div class="active-filters" id="activeFilters"></div>
+        <!-- Suggestions dropdown -->
+        <div class="suggestions-dropdown" id="suggestionsDropdown">
+          <div class="suggestion-section" id="titleSection" style="display: none;">
+            <h4 class="suggestion-header">Books</h4>
+            <div class="suggestion-list" id="titleList"></div>
+          </div>
+          <div class="suggestion-section" id="authorSection" style="display: none;">
+            <h4 class="suggestion-header">Authors</h4>
+            <div class="suggestion-list" id="authorList"></div>
+          </div>
+          <div class="suggestion-section" id="genreSection" style="display: none;">
+            <h4 class="suggestion-header">Genre</h4>
+            <div class="suggestion-list" id="genreList"></div>
+          </div>
+          <div class="suggestion-section" id="yearSection" style="display: none;">
+            <h4 class="suggestion-header">Year</h4>
+            <div class="suggestion-list suggestion-list-inline" id="yearList"></div>
+          </div>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="#" class="nav-link">Log in</a>
+        <a href="#" class="btn-primary">Try now</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main">
+    <div class="results-header" id="resultsHeader" style="display: none;">
+      <h1 class="search-term" id="searchTerm"></h1>
+      <p class="results-count" id="resultsCount"></p>
+    </div>
+
+    <div class="welcome" id="welcome">
+      <h1>Search Concept</h1>
+      <p>Start typing to see categorized suggestions</p>
+      <div class="demo-hints">
+        <p>Try:</p>
+        <ul>
+          <li><code>lars</code> - shows authors and titles</li>
+          <li><code>thriller 2022</code> - genre + year</li>
+          <li><code>jag är zlatan</code> - title matching</li>
+          <li><code>kristoffer</code> - phonetic matching (→ Christopher)</li>
+        </ul>
+      </div>
+    </div>
+
+    <section class="books-section" id="booksSection" style="display: none;">
+      <div class="section-header">
+        <h2 class="section-title">Books (<span id="bookCount">0</span>)</h2>
+        <select id="sortSelect" class="sort-select">
+          <option value="">Relevance</option>
+          <option value="rating">Rating</option>
+          <option value="year">Latest</option>
+          <option value="trending">Trending</option>
+          <option value="title">Title A-Z</option>
+        </select>
+      </div>
+      <div class="books-grid" id="booksGrid"></div>
+    </section>
+
+    <div class="pagination" id="pagination" style="display: none;">
+      <button class="pagination-btn" id="prevPage">Previous</button>
+      <span class="page-info" id="pageInfo"></span>
+      <button class="pagination-btn" id="nextPage">Next</button>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

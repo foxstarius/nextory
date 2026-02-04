@@ -123,7 +123,7 @@ app.get('/api/suggest', async (req, res) => {
       );
     }
 
-    // Titles search query
+    // Titles search query (only matches on title, not author)
     if (textQuery.length >= 2) {
       searches.push(
         { index: INDEX_NAME },
@@ -135,14 +135,9 @@ app.get('/api/suggest', async (req, res) => {
                 {
                   bool: {
                     should: [
-                      { match: { 'title.autocomplete': { query: textQuery, operator: 'or', boost: 2 } } },
-                      { match: { 'author.autocomplete': { query: textQuery, operator: 'or' } } },
-                      { match: { nameVariants: { query: textQuery, boost: 0.8 } } },
+                      { match: { 'title.autocomplete': { query: textQuery, operator: 'or' } } },
                       ...(hasPhoneticFields
-                        ? [
-                            { match: { 'title.phonetic': { query: textQuery, boost: 0.5 } } },
-                            { match: { 'author.phonetic': { query: textQuery, boost: 0.3 } } },
-                          ]
+                        ? [{ match: { 'title.phonetic': { query: textQuery, boost: 0.5 } } }]
                         : []),
                     ],
                   },

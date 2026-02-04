@@ -1,9 +1,16 @@
-import { Client } from '@elastic/elasticsearch';
+import { Client as ElasticsearchClient } from '@elastic/elasticsearch';
+import { Client as OpenSearchClient } from '@opensearch-project/opensearch';
 import { getNameVariants, extractFirstName, initializeCommonVariants } from '../server/nameVariants.js';
 
-const esClient = new Client({
-  node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
-});
+const esUrl = process.env.ELASTICSEARCH_URL || 'http://localhost:9200';
+const isOpenSearch = esUrl.includes('bonsai');
+
+// Use OpenSearch client for Bonsai, Elasticsearch client for local
+const esClient = isOpenSearch
+  ? new OpenSearchClient({ node: esUrl })
+  : new ElasticsearchClient({ node: esUrl });
+
+console.log(`Using ${isOpenSearch ? 'OpenSearch' : 'Elasticsearch'} client`);
 
 const INDEX_NAME = 'books';
 
@@ -246,7 +253,14 @@ const sampleBooks = [
 ];
 
 async function createIndex() {
-  const exists = await esClient.indices.exists({ index: INDEX_NAME });
+  // Check if index exists (OpenSearch returns { body: boolean }, ES returns boolean)
+  let exists = false;
+  try {
+    const existsResult = await esClient.indices.exists({ index: INDEX_NAME });
+    exists = existsResult.body ?? existsResult;
+  } catch (e) {
+    exists = false;
+  }
 
   if (exists) {
     console.log(`Deleting existing index: ${INDEX_NAME}`);

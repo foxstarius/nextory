@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import { Client } from '@elastic/elasticsearch';
+import { Client as ElasticsearchClient } from '@elastic/elasticsearch';
+import { Client as OpenSearchClient } from '@opensearch-project/opensearch';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -10,10 +11,14 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 6001;
 
-// Elasticsearch client
-const esClient = new Client({
-  node: process.env.ELASTICSEARCH_URL || 'http://localhost:9200',
-});
+// Use OpenSearch client for Bonsai, Elasticsearch client for local
+const esUrl = process.env.ELASTICSEARCH_URL || 'http://localhost:9200';
+const isOpenSearch = esUrl.includes('bonsai');
+const esClient = isOpenSearch
+  ? new OpenSearchClient({ node: esUrl })
+  : new ElasticsearchClient({ node: esUrl });
+
+console.log(`Using ${isOpenSearch ? 'OpenSearch' : 'Elasticsearch'} client`);
 
 const INDEX_NAME = 'books';
 

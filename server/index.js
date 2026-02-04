@@ -128,7 +128,7 @@ app.get('/api/suggest', async (req, res) => {
           })
         : { aggregations: { authors: { buckets: [] } } },
 
-      // Titles search (returns actual books)
+      // Titles search (returns actual books - matches on title OR author)
       textQuery.length >= 2
         ? esClient.search({
             index: INDEX_NAME,
@@ -140,9 +140,14 @@ app.get('/api/suggest', async (req, res) => {
                     {
                       bool: {
                         should: [
-                          { match: { 'title.autocomplete': { query: textQuery, operator: 'or' } } },
+                          { match: { 'title.autocomplete': { query: textQuery, operator: 'or', boost: 2 } } },
+                          { match: { 'author.autocomplete': { query: textQuery, operator: 'or' } } },
+                          { match: { nameVariants: { query: textQuery, boost: 0.8 } } },
                           ...(hasPhoneticFields
-                            ? [{ match: { 'title.phonetic': { query: textQuery, boost: 0.5 } } }]
+                            ? [
+                                { match: { 'title.phonetic': { query: textQuery, boost: 0.5 } } },
+                                { match: { 'author.phonetic': { query: textQuery, boost: 0.3 } } },
+                              ]
                             : []),
                         ],
                       },

@@ -91,135 +91,143 @@ app.get('/api/suggest', async (req, res) => {
   };
 
   try {
-    // Run parallel searches for each category
-    const [authorsResult, titlesResult, genresResult, yearsResult] = await Promise.all([
-      // Authors search (includes nameVariants for phonetic matching)
-      textQuery.length >= 2
-        ? esClient.search({
-            index: INDEX_NAME,
-            body: {
-              size: 0,
-              query: {
-                bool: {
-                  must: [
-                    {
-                      bool: {
-                        should: [
-                          { match: { 'author.autocomplete': { query: textQuery, operator: 'or' } } },
-                          // Search name variants (e.g., "kristoffer" matches "Christopher")
-                          { match: { nameVariants: { query: textQuery, boost: 0.8 } } },
-                          // Only include phonetic search if available
-                          ...(hasPhoneticFields
-                            ? [{ match: { 'author.phonetic': { query: textQuery, boost: 0.5 } } }]
-                            : []),
-                        ],
-                      },
-                    },
-                  ],
-                  filter: buildFilterClause().filter((f) => !f.terms?.['author.keyword']),
-                },
-              },
-              aggs: {
-                authors: {
-                  terms: { field: 'author.keyword', size: 5 },
-                },
-              },
-            },
-          })
-        : { aggregations: { authors: { buckets: [] } } },
+    // Build msearch body (single request with multiple searches to avoid rate limiting)
+    const searches = [];
 
-      // Titles search (returns actual books - matches on title OR author)
-      textQuery.length >= 2
-        ? esClient.search({
-            index: INDEX_NAME,
-            body: {
-              size: 5,
-              query: {
-                bool: {
-                  must: [
-                    {
-                      bool: {
-                        should: [
-                          { match: { 'title.autocomplete': { query: textQuery, operator: 'or', boost: 2 } } },
-                          { match: { 'author.autocomplete': { query: textQuery, operator: 'or' } } },
-                          { match: { nameVariants: { query: textQuery, boost: 0.8 } } },
-                          ...(hasPhoneticFields
-                            ? [
-                                { match: { 'title.phonetic': { query: textQuery, boost: 0.5 } } },
-                                { match: { 'author.phonetic': { query: textQuery, boost: 0.3 } } },
-                              ]
-                            : []),
-                        ],
-                      },
-                    },
-                  ],
-                  filter: buildFilterClause(),
+    // Authors search query
+    if (textQuery.length >= 2) {
+      searches.push(
+        { index: INDEX_NAME },
+        {
+          size: 0,
+          query: {
+            bool: {
+              must: [
+                {
+                  bool: {
+                    should: [
+                      { match: { 'author.autocomplete': { query: textQuery, operator: 'or' } } },
+                      { match: { nameVariants: { query: textQuery, boost: 0.8 } } },
+                      ...(hasPhoneticFields
+                        ? [{ match: { 'author.phonetic': { query: textQuery, boost: 0.5 } } }]
+                        : []),
+                    ],
+                  },
                 },
-              },
-              _source: ['title', 'author', 'releaseYear', 'rating', 'genre'],
+              ],
+              filter: buildFilterClause().filter((f) => !f.terms?.['author.keyword']),
             },
-          })
-        : { hits: { hits: [] } },
+          },
+          aggs: { authors: { terms: { field: 'author.keyword', size: 5 } } },
+        }
+      );
+    }
 
-      // Genres search
-      textQuery.length >= 2
-        ? esClient.search({
-            index: INDEX_NAME,
-            body: {
-              size: 0,
-              query: {
-                bool: {
-                  must: [
-                    {
-                      bool: {
-                        should: queryTerms.map((term) => ({
-                          prefix: { genre: { value: term, case_insensitive: true } },
-                        })),
-                      },
-                    },
-                  ],
-                  filter: buildFilterClause().filter((f) => !f.terms?.genre),
+    // Titles search query
+    if (textQuery.length >= 2) {
+      searches.push(
+        { index: INDEX_NAME },
+        {
+          size: 5,
+          query: {
+            bool: {
+              must: [
+                {
+                  bool: {
+                    should: [
+                      { match: { 'title.autocomplete': { query: textQuery, operator: 'or', boost: 2 } } },
+                      { match: { 'author.autocomplete': { query: textQuery, operator: 'or' } } },
+                      { match: { nameVariants: { query: textQuery, boost: 0.8 } } },
+                      ...(hasPhoneticFields
+                        ? [
+                            { match: { 'title.phonetic': { query: textQuery, boost: 0.5 } } },
+                            { match: { 'author.phonetic': { query: textQuery, boost: 0.3 } } },
+                          ]
+                        : []),
+                    ],
+                  },
                 },
-              },
-              aggs: {
-                genres: {
-                  terms: { field: 'genre', size: 5 },
-                },
-              },
+              ],
+              filter: buildFilterClause(),
             },
-          })
-        : { aggregations: { genres: { buckets: [] } } },
+          },
+          _source: ['title', 'author', 'releaseYear', 'rating', 'genre'],
+        }
+      );
+    }
 
-      // Years search (if year pattern found) - use autocomplete field for prefix matching
-      yearPattern
-        ? esClient.search({
-            index: INDEX_NAME,
-            body: {
-              size: 0,
-              query: {
-                bool: {
-                  must: [
-                    {
-                      bool: {
-                        should: yearPattern.map((yp) => ({
-                          match: { 'releaseYear.autocomplete': { query: yp } },
-                        })),
-                        minimum_should_match: 1,
-                      },
-                    },
-                  ],
-                  filter: buildFilterClause().filter((f) => !f.terms?.releaseYear),
+    // Genres search query
+    if (textQuery.length >= 2) {
+      searches.push(
+        { index: INDEX_NAME },
+        {
+          size: 0,
+          query: {
+            bool: {
+              must: [
+                {
+                  bool: {
+                    should: queryTerms.map((term) => ({
+                      prefix: { genre: { value: term, case_insensitive: true } },
+                    })),
+                  },
                 },
-              },
-              aggs: {
-                years: {
-                  terms: { field: 'releaseYear', size: 10, order: { _key: 'desc' } },
-                },
-              },
+              ],
+              filter: buildFilterClause().filter((f) => !f.terms?.genre),
             },
-          })
-        : { aggregations: { years: { buckets: [] } } },
-    ]);
+          },
+          aggs: { genres: { terms: { field: 'genre', size: 5 } } },
+        }
+      );
+    }
+
+    // Years search query
+    if (yearPattern) {
+      searches.push(
+        { index: INDEX_NAME },
+        {
+          size: 0,
+          query: {
+            bool: {
+              must: [
+                {
+                  bool: {
+                    should: yearPattern.map((yp) => ({
+                      match: { 'releaseYear.autocomplete': { query: yp } },
+                    })),
+                    minimum_should_match: 1,
+                  },
+                },
+              ],
+              filter: buildFilterClause().filter((f) => !f.terms?.releaseYear),
+            },
+          },
+          aggs: { years: { terms: { field: 'releaseYear', size: 10, order: { _key: 'desc' } } } },
+        }
+      );
+    }
+
+    // Execute single msearch request (or return empty if no searches needed)
+    let authorsResult = { aggregations: { authors: { buckets: [] } } };
+    let titlesResult = { hits: { hits: [] } };
+    let genresResult = { aggregations: { genres: { buckets: [] } } };
+    let yearsResult = { aggregations: { years: { buckets: [] } } };
+
+    if (searches.length > 0) {
+      const msearchResult = await esClient.msearch({ body: searches });
+      const responses = (msearchResult.body || msearchResult).responses;
+
+      // Map responses back to result variables based on what was searched
+      let idx = 0;
+      if (textQuery.length >= 2) {
+        authorsResult = responses[idx++];
+        titlesResult = responses[idx++];
+        genresResult = responses[idx++];
+      }
+      if (yearPattern) {
+        yearsResult = responses[idx++];
+      }
+    }
 
     // Helper to find which query terms matched a value
     const findMatchedTerms = (value, terms) => {
@@ -227,22 +235,14 @@ app.get('/api/suggest', async (req, res) => {
       return terms.filter((term) => valueLower.includes(term));
     };
 
-    // Helper to unwrap OpenSearch response (wraps in body) vs Elasticsearch (doesn't)
-    const unwrap = (result) => result.body || result;
-
-    // Process results (unwrap for OpenSearch compatibility)
-    const authorsData = unwrap(authorsResult);
-    const titlesData = unwrap(titlesResult);
-    const genresData = unwrap(genresResult);
-    const yearsData = unwrap(yearsResult);
-
-    const authors = (authorsData.aggregations?.authors?.buckets || []).map((b) => ({
+    // Process results (msearch responses are already unwrapped)
+    const authors = (authorsResult.aggregations?.authors?.buckets || []).map((b) => ({
       value: b.key,
       count: b.doc_count,
       matchedTerms: findMatchedTerms(b.key, queryTerms),
     }));
 
-    const titles = (titlesData.hits?.hits || []).map((hit) => ({
+    const titles = (titlesResult.hits?.hits || []).map((hit) => ({
       id: hit._id,
       value: hit._source.title,
       author: hit._source.author,
@@ -251,14 +251,14 @@ app.get('/api/suggest', async (req, res) => {
       matchedTerms: findMatchedTerms(hit._source.title, queryTerms),
     }));
 
-    const genresList = (genresData.aggregations?.genres?.buckets || []).map((b) => ({
+    const genresList = (genresResult.aggregations?.genres?.buckets || []).map((b) => ({
       value: b.key,
       count: b.doc_count,
       matchedTerms: findMatchedTerms(b.key, queryTerms),
     }));
 
     // Filter years by the pattern
-    let yearsList = (yearsData.aggregations?.years?.buckets || []).map((b) => ({
+    let yearsList = (yearsResult.aggregations?.years?.buckets || []).map((b) => ({
       value: b.key,
       count: b.doc_count,
     }));

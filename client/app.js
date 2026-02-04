@@ -86,7 +86,7 @@ function handleInput(e) {
     return;
   }
 
-  debounceTimer = setTimeout(() => fetchSuggestions(query), 150);
+  debounceTimer = setTimeout(() => fetchSuggestions(query), 300);
 }
 
 function hasActiveFilters() {

@@ -26,11 +26,30 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(join(__dirname, '../client')));
 
+// Check if phonetic fields are available (detected at startup)
+let hasPhoneticFields = false;
+
+async function checkPhoneticSupport() {
+  try {
+    const mapping = await esClient.indices.getMapping({ index: INDEX_NAME });
+    const indexMapping = mapping[INDEX_NAME] || mapping.body?.[INDEX_NAME];
+    const titleFields = indexMapping?.mappings?.properties?.title?.fields || {};
+    hasPhoneticFields = 'phonetic' in titleFields;
+    console.log(`Phonetic fields available: ${hasPhoneticFields}`);
+  } catch (e) {
+    console.log('Could not check phonetic support, assuming not available');
+    hasPhoneticFields = false;
+  }
+}
+
+// Initialize phonetic check
+checkPhoneticSupport();
+
 // Health check
 app.get('/api/health', async (req, res) => {
   try {
     const health = await esClient.cluster.health();
-    res.json({ status: 'ok', elasticsearch: health.status });
+    res.json({ status: 'ok', elasticsearch: health.status || health.body?.status });
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
   }
@@ -87,9 +106,12 @@ app.get('/api/suggest', async (req, res) => {
                       bool: {
                         should: [
                           { match: { 'author.autocomplete': { query: textQuery, operator: 'or' } } },
-                          { match: { 'author.phonetic': { query: textQuery, boost: 0.5 } } },
                           // Search name variants (e.g., "kristoffer" matches "Christopher")
                           { match: { nameVariants: { query: textQuery, boost: 0.8 } } },
+                          // Only include phonetic search if available
+                          ...(hasPhoneticFields
+                            ? [{ match: { 'author.phonetic': { query: textQuery, boost: 0.5 } } }]
+                            : []),
                         ],
                       },
                     },
@@ -119,7 +141,9 @@ app.get('/api/suggest', async (req, res) => {
                       bool: {
                         should: [
                           { match: { 'title.autocomplete': { query: textQuery, operator: 'or' } } },
-                          { match: { 'title.phonetic': { query: textQuery, boost: 0.5 } } },
+                          ...(hasPhoneticFields
+                            ? [{ match: { 'title.phonetic': { query: textQuery, boost: 0.5 } } }]
+                            : []),
                         ],
                       },
                     },
@@ -265,16 +289,24 @@ app.get('/api/search', async (req, res) => {
 
     // Text query (if any remaining after filter extraction)
     if (q && q.trim()) {
+      const shouldClauses = [
+        { match: { 'title.autocomplete': { query: q, operator: 'or', boost: 3 } } },
+        { match: { 'author.autocomplete': { query: q, operator: 'or', boost: 2 } } },
+        // Name variants (e.g., "kristoffer" matches "Christopher")
+        { match: { nameVariants: { query: q, boost: 0.8 } } },
+      ];
+
+      // Only add phonetic searches if available
+      if (hasPhoneticFields) {
+        shouldClauses.push(
+          { match: { 'title.phonetic': { query: q, boost: 1 } } },
+          { match: { 'author.phonetic': { query: q, boost: 0.5 } } }
+        );
+      }
+
       must.push({
         bool: {
-          should: [
-            { match: { 'title.autocomplete': { query: q, operator: 'or', boost: 3 } } },
-            { match: { 'title.phonetic': { query: q, boost: 1 } } },
-            { match: { 'author.autocomplete': { query: q, operator: 'or', boost: 2 } } },
-            { match: { 'author.phonetic': { query: q, boost: 0.5 } } },
-            // Name variants (e.g., "kristoffer" matches "Christopher")
-            { match: { nameVariants: { query: q, boost: 0.8 } } },
-          ],
+          should: shouldClauses,
           minimum_should_match: 1,
         },
       });

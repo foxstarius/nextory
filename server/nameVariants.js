@@ -16,7 +16,7 @@ function isLatinName(str) {
 
 /**
  * Fetches name variants from Wikidata for a given first name
- * Uses a simpler, faster query that focuses on "said to be same as" relationships
+ * Caches ALL variants so future lookups for any name in the family are instant
  */
 export async function getNameVariants(firstName) {
   const normalizedName = firstName.toLowerCase().trim();
@@ -27,20 +27,21 @@ export async function getNameVariants(firstName) {
   }
 
   try {
-    // Simpler SPARQL query - just get "said to be same as" (P460) relationships
-    // This is faster and returns actual name equivalents
+    // SPARQL query - search multiple given name types and get P460 relationships
+    // Q12308941 = male given name, Q11879590 = female given name, Q202444 = given name
+    const capitalizedName = normalizedName.charAt(0).toUpperCase() + normalizedName.slice(1);
     const query = `
       SELECT DISTINCT ?variantLabel WHERE {
-        # Find given name by label
-        ?name wdt:P31/wdt:P279* wd:Q202444 .
-        ?name rdfs:label "${normalizedName}"@en .
+        VALUES ?types { wd:Q12308941 wd:Q11879590 wd:Q202444 }
+        ?name wdt:P31 ?types .
+        ?name rdfs:label "${capitalizedName}"@en .
 
         # Get "said to be the same as" names
         ?name wdt:P460 ?variant .
         ?variant rdfs:label ?variantLabel .
         FILTER(LANG(?variantLabel) = "en" || LANG(?variantLabel) = "sv")
       }
-      LIMIT 20
+      LIMIT 30
     `;
 
     const url = `${WIKIDATA_ENDPOINT}?query=${encodeURIComponent(query)}`;
@@ -67,22 +68,35 @@ export async function getNameVariants(firstName) {
     const data = await response.json();
 
     // Extract unique variants, filter to Latin characters only
-    const variants = [...new Set(
+    const allVariants = [...new Set(
       data.results.bindings
         .map(b => b.variantLabel?.value?.toLowerCase())
         .filter(Boolean)
-        .filter(v => v !== normalizedName)
         .filter(isLatinName)
         .filter(v => v.length >= 2 && v.length <= 20)
     )];
 
+    // Build the complete name family (including the searched name)
+    const nameFamily = [...new Set([normalizedName, ...allVariants])];
+
+    // Cache ALL names in the family with their variants (excluding themselves)
+    // This way, looking up "Christopher" also caches "Kristoffer", "Christoph", etc.
+    for (const name of nameFamily) {
+      if (!cache.has(name)) {
+        const variantsForThisName = nameFamily.filter(v => v !== name);
+        cache.set(name, variantsForThisName);
+      }
+    }
+
+    // Return variants for the originally requested name
+    const variants = nameFamily.filter(v => v !== normalizedName);
+
     if (variants.length > 0) {
-      console.log(`  ✓ Wikidata: "${firstName}" → ${variants.join(', ')}`);
+      console.log(`  ✓ Wikidata: "${firstName}" → ${variants.slice(0, 5).join(', ')}${variants.length > 5 ? ` (+${variants.length - 5} more)` : ''} [cached ${nameFamily.length} names]`);
     } else {
       console.log(`  · Wikidata: "${firstName}" → (no variants found)`);
     }
 
-    cache.set(normalizedName, variants);
     return variants;
   } catch (error) {
     if (error.name === 'AbortError') {
@@ -105,95 +119,11 @@ export function extractFirstName(fullName) {
 }
 
 /**
- * Pre-populate cache with common Swedish name variants
- * (Fallback when Wikidata is slow or unavailable)
+ * Initialize cache (empty - will be populated from Wikidata during indexing)
  */
 export function initializeCommonVariants() {
-  // Common name variants - Swedish/English equivalents
-  // This serves as both cache and fallback when Wikidata is slow/unavailable
-  const commonVariants = {
-    // C/K names
-    'christopher': ['kristoffer', 'christoffer', 'christoph', 'chris', 'kristopher', 'kris'],
-    'kristoffer': ['christopher', 'christoffer', 'christoph', 'chris', 'kristopher', 'kris'],
-    'christoffer': ['christopher', 'kristoffer', 'christoph', 'chris', 'kristopher', 'kris'],
-
-    // M names
-    'mikael': ['michael', 'mikkel', 'michel', 'micke', 'mike', 'mick'],
-    'michael': ['mikael', 'mikkel', 'michel', 'micke', 'mike', 'mick'],
-
-    // S names
-    'stefan': ['stephan', 'steven', 'steffen', 'steve', 'stephen'],
-    'steve': ['stefan', 'stephan', 'steven', 'steffen', 'stephen'],
-    'stieg': ['stig'],
-    'stig': ['stieg'],
-
-    // J names
-    'johan': ['john', 'johannes', 'jon', 'johnny', 'jan', 'hans'],
-    'john': ['johan', 'johannes', 'jon', 'johnny', 'jan', 'hans'],
-    'jo': ['joe', 'johan', 'john', 'johannes'],
-    'james': ['jim', 'jimmy', 'jakob', 'jacob'],
-    'jonas': ['jonah', 'jon'],
-
-    // E names
-    'erik': ['eric', 'erich', 'erick'],
-    'eric': ['erik', 'erich', 'erick'],
-
-    // K/C names
-    'karl': ['carl', 'charles', 'charlie'],
-    'carl': ['karl', 'charles', 'charlie'],
-
-    // F names
-    'fredrik': ['frederick', 'fredric', 'freddie', 'fred', 'fritz'],
-    'freida': ['frida', 'frieda'],
-    'frida': ['freida', 'frieda'],
-
-    // L names
-    'lars': ['laurence', 'lawrence', 'larry'],
-    'lena': ['helena', 'lina', 'helene'],
-
-    // P names
-    'per': ['peter', 'petter', 'pierre', 'pete'],
-    'peter': ['per', 'petter', 'pierre', 'pete'],
-    'paula': ['paulina', 'pauline', 'paola'],
-
-    // A names
-    'anders': ['andrew', 'andreas', 'andre', 'andy'],
-    'andreas': ['anders', 'andrew', 'andre', 'andy'],
-    'anna': ['anne', 'ann', 'hanna', 'hannah', 'anja'],
-
-    // N names
-    'niklas': ['nicholas', 'nicklas', 'nicolas', 'nick', 'nils'],
-    'nicholas': ['niklas', 'nicklas', 'nicolas', 'nick', 'nils'],
-
-    // K names (female)
-    'katarina': ['katherine', 'catherine', 'katrina', 'karin', 'kate', 'katja'],
-
-    // M names (female)
-    'maria': ['marie', 'mary', 'maja', 'marion'],
-    'monica': ['monika'],
-
-    // S names (female)
-    'sara': ['sarah', 'sahra'],
-
-    // C names (female)
-    'camilla': ['kamilla', 'camille'],
-
-    // D names
-    'dan': ['daniel', 'danny'],
-    'daniel': ['dan', 'danny', 'danilo'],
-
-    // G names
-    'gillian': ['jillian', 'gill', 'jill'],
-
-    // L names (female)
-    'linda': ['lynda'],
-  };
-
-  for (const [name, variants] of Object.entries(commonVariants)) {
-    cache.set(name, variants);
-  }
-
-  console.log(`Initialized ${Object.keys(commonVariants).length} common name variants in cache`);
+  // Cache starts empty - populated dynamically from Wikidata during seed
+  console.log('Name variants cache initialized (empty - will populate from Wikidata)');
 }
 
 /**

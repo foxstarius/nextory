@@ -11,10 +11,11 @@ A search demo built to showcase advanced Elasticsearch capabilities for Nextory 
 ## Key Features
 - **Federated autocomplete** - Categorized suggestions (Authors, Titles, Genres, Years)
 - **Filter chips** - Click suggestions to add as filters
-- **Phonetic matching** - Beider-Morse encoder for name variations
-- **Name variants** - "kristoffer" matches "Christopher" via Wikidata integration + static cache
+- **Phonetic matching** - Beider-Morse encoder for name variations (local ES only)
+- **Name variants** - "kristoffer" matches "Christopher" via Wikidata SPARQL integration
 - **Edge n-gram** - Prefix matching for autocomplete
 - **Swedish text analysis** - Stemming for Swedish content
+- **msearch** - Single request for all autocomplete queries (avoids Bonsai rate limits)
 
 ## Project Structure
 ```
@@ -24,7 +25,7 @@ A search demo built to showcase advanced Elasticsearch capabilities for Nextory 
 │   └── styles.css      # Nextory purple theme
 ├── server/
 │   ├── index.js        # Express server, /api/suggest & /api/search
-│   └── nameVariants.js # Wikidata SPARQL + static cache for name variants
+│   └── nameVariants.js # Wikidata SPARQL for name variants (family caching)
 ├── scripts/
 │   └── seed-elasticsearch.js  # Index creation + book seeding
 ├── render.yaml         # Render deployment config
@@ -51,8 +52,8 @@ npm install
 npm run seed          # Seed local ES
 npm run dev           # Start with nodemon (auto-reload)
 
-# Or seed remote Bonsai:
-ELASTICSEARCH_URL="https://..." USE_WIKIDATA=false npm run seed
+# Seed remote Bonsai (with Wikidata):
+ELASTICSEARCH_URL="https://..." USE_WIKIDATA=true npm run seed
 ```
 
 ## Important Notes
@@ -70,4 +71,21 @@ ELASTICSEARCH_URL="https://..." USE_WIKIDATA=false npm run seed
 ## Known Quirks
 - Express 5 requires `/{*splat}` instead of `*` for wildcard routes
 - OpenSearch `indices.exists()` returns `{ body: boolean }` vs ES returns `boolean`
-- Highlight function carefully avoids matching inside HTML tags
+- OpenSearch client wraps responses in `body`, ES client doesn't - use `result.body || result`
+- Bonsai free tier: no phonetic plugin, concurrent request limits (solved with msearch)
+
+## Wikidata Integration
+Name variants are fetched from Wikidata during indexing using SPARQL queries:
+- Searches P460 ("said to be same as") relationships for given names
+- Queries Q12308941 (male given name), Q11879590 (female given name), Q202444 (given name)
+- Family caching: looking up "Henrik" also caches "Henry", "Enrique", etc.
+- 5 second timeout per query with graceful fallback
+
+## Future Improvements
+- **Surname variants** - "Christopherson" → "Kristofferson" (extract base name, apply variants)
+- **Persistent cache** - Save Wikidata results to file/DB to avoid re-fetching on each seed
+- **Swedish label fallback** - Query Wikidata with Swedish labels too, not just English
+- **Fuzzy matching** - Levenshtein distance for typo tolerance
+- **Synonym expansion** - "deckare" ↔ "thriller" ↔ "crime"
+- **Series/narrator search** - Additional categorized suggestions
+- **Personalization** - Boost results based on user history
